@@ -1,7 +1,10 @@
 #region Imports
+import heapq
 import math
 import numpy as np
 import os
+import pandas as pd
+import random as rnd
 import re
 
 from mmpose.apis import MMPoseInferencer
@@ -112,8 +115,41 @@ def load_rps_images(folder_path, out_path):
             featured_images.append(RPSImage(inferencer, file_name, file_path, out_path))
     return featured_images
 
-def build_train_test(train_pct):
-    return
+# given a dataset and a training percentage, randomly split the data into training and testing sets
+def build_train_test(train_pct, dataset):
+    # traditionally the bulk of the dataset is used for training, 
+    # so start with all train then build up test
+    test = []
+    train = dataset.copy()
+    while len(train) / len(dataset) > train_pct:
+        item = rnd.choice(train)
+        test.append(item)
+        train.remove(item)
+    return train, test
+
+# given a training set, a test image, and k, acquire the k neareest neighbor set
+def get_knn(train, img, k):
+    neighbors = heapq.heapify([])
+    for t_img in train:
+        heapq.heappush(neighbors, (img.compare_features(t_img), t_img))
+    return [heapq.heappop(neighbors) for i in range(k)]
+    
+# given a test image, and its k nearest neighbors, predict its label and check for accuracy
+def predict(img, k_neighbors):
+    # check accuracy for each level of label categorization (shape, shape+hand, etc.)
+    true_lbls = img.get_labels()
+    results = []
+    for i in range(len(true_lbls)):
+        ground = " ".join(true_lbls[0:i+1])
+        votes = {}
+        for n in k_neighbors:
+            vote_lbl = " ".join(n.get_labels()[0:i+1])
+            votes[vote_lbl] = votes.get(vote_lbl, 0) - 1 # so we can use a min-heap, the default of heapq
+        tally = heapq.heapify([(count, vote) for (vote, count) in votes])
+        win_tot, win_val = heapq.heappop(tally)
+        results.append(win_val, (-1 * win_tot) / k, ground == win_val)
+    return results
+            
 #endregion
 
 
@@ -127,6 +163,26 @@ img_dir = 'img'
 out_dir = 'out'
 
 # build featured image objects from images in directory
+# the objects calculate their features once to save computational time during the train/test phase
 images = load_rps_images(img_dir, out_dir)
+
+
+# set experimental parameters here
+max_k = 7 # start @ 1
+min_train, max_train = 75, 90
+train_inc = 5
+
+# run the experiment using those parameters
+# test with a range of different training percentages
+for train_pct in range(min_train, max_train + 1, train_inc):
+    train, test = build_train_test(train_pct, images)
+    
+    for test_img in test:
+        # get the maximum, then slice to avoid repeated heapification
+        knn = get_knn(test_img, max_k)
+        
+        # test with a range of different k values
+        for k in range(max_k):
+            prediction = predict(test_img, knn[0:k])
 
 #endregion
