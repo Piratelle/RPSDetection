@@ -1,58 +1,32 @@
+#region Imports
 import math
+import numpy as np
 import os
 import re
 
 from mmpose.apis import MMPoseInferencer
+#endregion
 
 
-###############
-# Static      #
-###############
-
-# dictionary of labels
-# key   = character used in image naming convention
-# value = full label 
-labels = {
-    'p' : 'paper',
-    'r' : 'rock',
-    's' : 'scissors'
-}
-
-
-###############
-# Functions   #
-###############
-
-# process a directory, creating a list of images and their labels
-# image naming convention is {initial of contributor}{initial indicating left or right hand}{initial indicating rock/paper/scissors}{3-digit numeric}.jpg
-# folder_path   = the local directory which contains the images to be processed
-# output        = a list of (full image file path, ground truth label) pairs
-def load_rps_images(folder_path):
-    labeled_images = []
-    for filename in os.listdir(folder_path):
-        f = filename.lower()
-        file_path = os.path.join(folder_path, f)
-        if os.path.isfile(file_path):
-            m = re.fullmatch('([a-z])([lr])([rps])(\d{3})\.jpg', f)
-            if not m: continue #skip file if the pattern doesn't match
-            lbl = m.group(3)
-            if lbl in labels.keys():
-                lbl = labels[lbl]
-            else:
-                lbl = 'unknown_' + lbl
-            labeled_images.append((file_path, lbl))
-    return labeled_images
-
-
+#region Image Class
 ###############
 # Image Class #
 ###############
 
 class RPSImage:
+    HANDS = { 'l' : 'left', 'r' : 'right' }
+    LABELS = { 'p' : 'paper', 'r' : 'rock', 's' : 'scissors' }
+    
     # on construction, process a single image using MMPose, acquiring the necessary features
-    def __init__(self, inferencer, img_path, out_path):
+    def __init__(self, inferencer, file_name, file_path, out_path):
+        # save path and label
+        self.name = file_name.lower()
+        self.path = file_path
+        self.label, self.hand = '', ''
+        self.learn_labels()
+        
         # process the image through MMPose, saving output
-        result_generator = inferencer(img_path, out_dir=out_path)
+        result_generator = inferencer(self.path, out_dir=out_path)
         result = next(result_generator)
         data_dict = result['predictions'][0][0]
         
@@ -82,18 +56,68 @@ class RPSImage:
             if (max_x[j] != min_x[j]): # prevent divide-by-zero errors
                 self.key_ratio[j] = (max_y[j] - min_y[j]) / (max_x[j] - min_x[j])
     
+    # learn the ground truth labels from this image's file name
+    # naming convention is {initial of contributor}{initial indicating left or right hand}{initial indicating rock/paper/scissors}{3?-digit numeric}.jpg
+    def learn_labels(self):
+        m = re.fullmatch('([a-z])([lr])([rps])(\d+)\.jpg', self.name)
+        if not m: return
+        
+        lbl = m.group(3)
+        if lbl in self.LABELS.keys():
+            self.label = self.LABELS[lbl]
+        else:
+            self.label = 'unknown_' + lbl
+        
+        hand = m.group(2)
+        if hand in self.HANDS.keys():
+            self.hand = self.HANDS[hand]
+        else:
+            self.hand = 'unknown'
+    
+    # return an array of labels in order of categorical relevance
+    def get_labels(self):
+        return [ self.label, self.hand ]
+    
+    # return an array of feature values
     def get_features(self):
         features = [ self.box_ratio ]
         for r in self.key_ratio:
             features.append(r)
         return features
     
+    # return the result of comparing this image's features with another RPSImage's features
     def compare_features(self, other):
         my_features = self.get_features()
         ot_features = other.get_features()
-        # more to do here
+        l2 = np.linalg.norm(my_features - ot_features) # calculate L2 distance
+        return l2
+
+#endregion
 
 
+#region Functions
+###############
+# Functions   #
+###############
+
+# process a directory of images, learning their ground truths and features
+# folder_path   = the local directory which contains the images to be processed
+# output        = a list of featured image objects
+def load_rps_images(folder_path, out_path):
+    featured_images = []
+    inferencer = MMPoseInferencer('hand')
+    for file_name in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, file_name)
+        if os.path.isfile(file_path):
+            featured_images.append(RPSImage(inferencer, file_name, file_path, out_path))
+    return featured_images
+
+def build_train_test(train_pct):
+    return
+#endregion
+
+
+#region Experiment
 ###############
 # Experiment  #
 ###############
@@ -102,8 +126,7 @@ class RPSImage:
 img_dir = 'img'
 out_dir = 'out'
 
-labeled_images = load_rps_images(img_dir)
+# build featured image objects from images in directory
+images = load_rps_images(img_dir, out_dir)
 
-inferencer = MMPoseInferencer('hand')
-for (img_path, lbl) in labeled_images:
-    img = RPSImage(inferencer, img_path, out_dir)
+#endregion
