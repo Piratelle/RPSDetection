@@ -267,8 +267,8 @@ for pct in pcts:
   ax1.plot(depth1['K'], depth1[lbl], label=lbl)
   ax2.plot(depth2['K'], depth2[lbl], label=lbl)
 
-plt.legend() 
-plt.show()
+plt.legend()
 plt.savefig('success.png')
+plt.show()
 
 #endregion
