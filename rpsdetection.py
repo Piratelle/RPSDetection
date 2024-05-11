@@ -3,6 +3,11 @@ import re
 
 from mmpose.apis import MMPoseInferencer
 
+
+###############
+# Static      #
+###############
+
 # dictionary of labels
 # key   = character used in image naming convention
 # value = full label 
@@ -12,8 +17,15 @@ labels = {
     's' : 'scissors'
 }
 
+
+###############
+# Functions   #
+###############
+
 # process a directory, creating a list of images and their labels
 # image naming convention is {initial of contributor}{initial indicating left or right hand}{initial indicating rock/paper/scissors}{3-digit numeric}.jpg
+# folder_path   = the local directory which contains the images to be processed
+# output        = a list of (full image file path, ground truth label) pairs
 def load_rps_images(folder_path):
     labeled_images = []
     for filename in os.listdir(folder_path):
@@ -29,19 +41,32 @@ def load_rps_images(folder_path):
                 lbl = 'unknown_' + lbl
             labeled_images.append((file_path, lbl))
     return labeled_images
-            
 
 
-#img_path = 'img/test.jpg'   # replace this with your own image path
+###############
+# Image Class #
+###############
 
-# instantiate the inferencer using the model alias
-#inferencer = MMPoseInferencer('hand')
+class RPSImage:
+    # on construction, process a single image using MMPose, acquiring the necessary features
+    def __init__(self, inferencer, img_path, out_path):
+        # process the image through MMPose, saving output
+        result_generator = inferencer(img_path, out_dir=out_path)
+        result = next(result_generator)
+        
+        # translate results into features
 
-# The MMPoseInferencer API employs a lazy inference approach,
-# creating a prediction generator when given input
-#result_generator = inferencer(img_path, show=True, out_dir='out')
-#result = next(result_generator)
 
-## run code here!
-labeled_images = load_rps_images('img')
-print(labeled_images)
+###############
+# Experiment  #
+###############
+
+# set local directory paths here
+img_dir = 'img'
+out_dir = 'out'
+
+labeled_images = load_rps_images(img_dir)
+
+inferencer = MMPoseInferencer('hand')
+for (img_path, lbl) in labeled_images:
+    img = RPSImage(inferencer, img_path, out_dir)
