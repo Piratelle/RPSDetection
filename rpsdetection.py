@@ -148,7 +148,10 @@ def predict(img, k_neighbors):
             vote_lbl = " ".join(n.get_labels()[0:i+1])
             votes[vote_lbl] = votes.get(vote_lbl, 0) - 1 # so we can use a min-heap, the default of heapq
         tally = [(votes[vote], vote) for vote in votes]
+        #print(f"\t\ttally={tally}")
+        heapq.heapify(tally)
         win_tot, win_val = heapq.heappop(tally)
+        #print(f"\t\twinner={win_val}")
         results.append((ground, win_val, (-1 * win_tot) / k, ground == win_val))
     return results
 
@@ -208,6 +211,10 @@ def experiment(img_dir, out_dir, max_k, train_min, train_max, train_inc):
     #return results in a DataFrame
     return pd.DataFrame(data, columns=hdr)
            
+#endregion
+
+
+#region Visualizations
 #endregion
 
 
