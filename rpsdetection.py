@@ -1,6 +1,7 @@
 #region Imports
 import heapq
 import math
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
@@ -201,7 +202,7 @@ def experiment(img_dir, out_dir, max_k, train_min, train_max, train_inc):
             
             # test with a range of different k values
             for k in range(test_k):
-                print(f"\tknn w/ k = {k + 1}")
+                #print(f"\tknn w/ k = {k + 1}")
                 prediction = predict(test_img, knn[0:k + 1])
                 data_row = [ test_img.name, train_pct, (k + 1) ]
                 for result in prediction:
@@ -211,10 +212,6 @@ def experiment(img_dir, out_dir, max_k, train_min, train_max, train_inc):
     #return results in a DataFrame
     return pd.DataFrame(data, columns=hdr)
            
-#endregion
-
-
-#region Visualizations
 #endregion
 
 
@@ -232,8 +229,46 @@ max_k = 7 # min is 1
 min_train, max_train = 75, 90 # percentages
 train_inc = 5
 
-# all the work gets done here, results in a DataFrame
-df = experiment(src_dir, mmpose_out_dir, max_k, min_train, max_train, train_inc)
-df.to_csv('results.csv', index=False)
+# all the work gets done here, results in a DataFrame which is then saved to CSV
+results = experiment(src_dir, mmpose_out_dir, max_k, min_train, max_train, train_inc)
+results.to_csv('results.csv', index=False)
+
+#endregion
+
+#region Visualizations
+###############
+# Visuals     #
+###############
+
+# plot the results for different training percentages and k values, splitting out by categorical depth
+agg = results[['Train Pct','K','Success w Depth 1','Success w Depth 2']].groupby(['Train Pct', 'K']).agg({'count', lambda gr: np.count_nonzero(gr)}).reset_index()
+agg['Depth 1 Pct'] = agg['Success w Depth 1','<lambda_0>'] / agg['Success w Depth 1','count']
+agg['Depth 2 Pct'] = agg['Success w Depth 2','<lambda_0>'] / agg['Success w Depth 2','count']
+
+pcts = sorted(results['Train Pct'].unique())
+depth1 = agg[agg['Train Pct',''] == pcts[0]][['K']]
+depth2 = depth1.copy()
+
+fig = plt.figure(figsize=(10, 5))
+gs = fig.add_gridspec(1, 2, hspace=0, wspace=0)
+(ax1, ax2) = gs.subplots(sharex=True, sharey=True)
+fig.suptitle('Success Rate Trends')
+ax1.set_title('Shape Only')
+ax2.set_title('Shape & Hand')
+ax1.set(xlabel='k', ylabel='% Correct')
+ax2.set(xlabel='k')
+
+for pct in pcts:
+  filtered = agg[agg['Train Pct',''] == pct].reset_index()
+  lbl = f'Training Pct {pct}'
+  depth1[lbl] = filtered['Depth 1 Pct','']
+  depth2[lbl] = filtered['Depth 2 Pct','']
+
+  ax1.plot(depth1['K'], depth1[lbl], label=lbl)
+  ax2.plot(depth2['K'], depth2[lbl], label=lbl)
+
+plt.legend() 
+plt.show()
+plt.savefig('success.png')
 
 #endregion
