@@ -135,10 +135,12 @@ def get_knn(train, img, k):
     return [heapq.heappop(neighbors) for i in range(k)]
     
 # given a test image, and its k nearest neighbors, predict its label and check for accuracy
+# output    = a list of (ground truth label, knn predicted label, knn vote percentage, success boolean) tuples
 def predict(img, k_neighbors):
     # check accuracy for each level of label categorization (shape, shape+hand, etc.)
     true_lbls = img.get_labels()
     results = []
+    k = len(k_neighbors)
     for i in range(len(true_lbls)):
         ground = " ".join(true_lbls[0:i+1])
         votes = {}
@@ -147,9 +149,61 @@ def predict(img, k_neighbors):
             votes[vote_lbl] = votes.get(vote_lbl, 0) - 1 # so we can use a min-heap, the default of heapq
         tally = heapq.heapify([(count, vote) for (vote, count) in votes])
         win_tot, win_val = heapq.heappop(tally)
-        results.append(win_val, (-1 * win_tot) / k, ground == win_val)
+        results.append(ground, win_val, (-1 * win_tot) / k, ground == win_val)
     return results
+
+# clamp value to be within a minimum and maximum boundary (inclusive)
+def clamp(val, min_val, max_val):
+    return max(min_val, min(val, max_val))
+
+# clamp value to be a percentage (0  to 100)
+def clamp_pct(val):
+    return clamp(val, 0, 100)
+
+# perform the experiment!
+# this is a function to allow early return in error conditions
+def experiment(img_dir, out_dir, max_k, train_min, train_max, train_inc):
+    # build featured image objects from images in directory
+    # the objects calculate their features once to save computational time during the train/test phase
+    images = load_rps_images(img_dir, out_dir)
+    if len(images) == 0:
+        print("Error: no valid images dected in " + img_dir)
+        return
+    
+    # clamp parameters before using, just to be safe
+    tmin = clamp_pct(train_min)
+    tmax = clamp_pct(train_max)
+    tinc = min(train_inc, tmax - tmin)
+    
+    # prepare a header for the results
+    lbl_count = len(images[0].get_labels())
+    hdr = [ "Image", "Train Pct", "K" ]
+    for i in range(lbl_count):
+        depth_tag = " w Depth " + (i+1)
+        add_hdr = [lbl + depth_tag for lbl in ["Ground Truth","Prediction","KNN Confidence","Success"]]
+        hdr += add_hdr
+    
+    # test with a range of different training percentages
+    data = []
+    for train_pct in range(tmin, tmax + 1, tinc):
+        train, test = build_train_test(train_pct, images)
+        test_k = clamp(max_k, 1, len(train)) # just in case
+        
+        for test_img in test:
+            # get the maximum, then slice to avoid repeated heapification
+            knn = get_knn(test_img, test_k)
             
+            # test with a range of different k values
+            for k in range(test_k):
+                prediction = predict(test_img, knn[0:k])
+                data_row = [ test_img.name, train_pct, (k + 1) ]
+                for result in prediction:
+                    data_row = [*data_row, *result]
+                data.append(data_row)
+    
+    #return results in a DataFrame
+    return pd.DataFrame(data, columns=hdr)
+           
 #endregion
 
 
@@ -159,30 +213,16 @@ def predict(img, k_neighbors):
 ###############
 
 # set local directory paths here
-img_dir = 'img'
-out_dir = 'out'
-
-# build featured image objects from images in directory
-# the objects calculate their features once to save computational time during the train/test phase
-images = load_rps_images(img_dir, out_dir)
-
+src_dir = 'img'
+mmpose_out_dir = 'out'
 
 # set experimental parameters here
-max_k = 7 # start @ 1
-min_train, max_train = 75, 90
+max_k = 7 # min is 1
+min_train, max_train = 75, 90 # percentages
 train_inc = 5
 
-# run the experiment using those parameters
-# test with a range of different training percentages
-for train_pct in range(min_train, max_train + 1, train_inc):
-    train, test = build_train_test(train_pct, images)
-    
-    for test_img in test:
-        # get the maximum, then slice to avoid repeated heapification
-        knn = get_knn(test_img, max_k)
-        
-        # test with a range of different k values
-        for k in range(max_k):
-            prediction = predict(test_img, knn[0:k])
+# all the work gets done here, results in a DataFrame
+df = experiment(src_dir, mmpose_out_dir, max_k, min_train, max_train, train_inc)
+df.to_csv('results.csv', index=False)
 
 #endregion
