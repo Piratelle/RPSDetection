@@ -92,7 +92,7 @@ class RPSImage:
     def compare_features(self, other):
         my_features = self.get_features()
         ot_features = other.get_features()
-        l2 = np.linalg.norm(my_features - ot_features) # calculate L2 distance
+        l2 = np.linalg.norm(np.array(my_features) - np.array(ot_features)) # calculate L2 distance
         return l2
 
 #endregion
@@ -129,7 +129,7 @@ def build_train_test(train_pct, dataset):
 
 # given a training set, a test image, and k, acquire the k neareest neighbor set
 def get_knn(train, img, k):
-    neighbors = heapq.heapify([])
+    neighbors = []
     for t_img in train:
         heapq.heappush(neighbors, (img.compare_features(t_img), t_img))
     return [heapq.heappop(neighbors) for i in range(k)]
@@ -144,12 +144,12 @@ def predict(img, k_neighbors):
     for i in range(len(true_lbls)):
         ground = " ".join(true_lbls[0:i+1])
         votes = {}
-        for n in k_neighbors:
+        for dist, n in k_neighbors:
             vote_lbl = " ".join(n.get_labels()[0:i+1])
             votes[vote_lbl] = votes.get(vote_lbl, 0) - 1 # so we can use a min-heap, the default of heapq
-        tally = heapq.heapify([(count, vote) for (vote, count) in votes])
+        tally = [(votes[vote], vote) for vote in votes]
         win_tot, win_val = heapq.heappop(tally)
-        results.append(ground, win_val, (-1 * win_tot) / k, ground == win_val)
+        results.append((ground, win_val, (-1 * win_tot) / k, ground == win_val))
     return results
 
 # clamp value to be within a minimum and maximum boundary (inclusive)
@@ -165,9 +165,10 @@ def clamp_pct(val):
 def experiment(img_dir, out_dir, max_k, train_min, train_max, train_inc):
     # build featured image objects from images in directory
     # the objects calculate their features once to save computational time during the train/test phase
+    print("* * * BUILD PHASE * * *")
     images = load_rps_images(img_dir, out_dir)
     if len(images) == 0:
-        print("Error: no valid images dected in " + img_dir)
+        print("Error: no valid images detected in " + img_dir)
         return
     
     # clamp parameters before using, just to be safe
@@ -179,23 +180,26 @@ def experiment(img_dir, out_dir, max_k, train_min, train_max, train_inc):
     lbl_count = len(images[0].get_labels())
     hdr = [ "Image", "Train Pct", "K" ]
     for i in range(lbl_count):
-        depth_tag = " w Depth " + (i+1)
+        depth_tag = f" w Depth {(i+1)}"
         add_hdr = [lbl + depth_tag for lbl in ["Ground Truth","Prediction","KNN Confidence","Success"]]
         hdr += add_hdr
     
     # test with a range of different training percentages
+    print("* * * TRAIN/TEST PHASE * * *")
     data = []
     for train_pct in range(tmin, tmax + 1, tinc):
-        train, test = build_train_test(train_pct, images)
+        print(f"starting test w/ train pct = {train_pct}")
+        train, test = build_train_test(train_pct / 100, images)
         test_k = clamp(max_k, 1, len(train)) # just in case
         
         for test_img in test:
             # get the maximum, then slice to avoid repeated heapification
-            knn = get_knn(test_img, test_k)
+            knn = get_knn(train, test_img, test_k)
             
             # test with a range of different k values
             for k in range(test_k):
-                prediction = predict(test_img, knn[0:k])
+                print(f"\tknn w/ k = {k + 1}")
+                prediction = predict(test_img, knn[0:k + 1])
                 data_row = [ test_img.name, train_pct, (k + 1) ]
                 for result in prediction:
                     data_row = [*data_row, *result]
