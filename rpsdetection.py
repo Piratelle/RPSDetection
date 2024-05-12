@@ -235,6 +235,7 @@ results.to_csv('results.csv', index=False)
 
 #endregion
 
+
 #region Visualizations
 ###############
 # Visuals     #
@@ -269,6 +270,40 @@ for pct in pcts:
 
 plt.legend()
 plt.savefig('success.png')
+plt.show()
+
+
+# plot the results for different training percentages and k values at the first categorical depth, splitting out by shape
+agg_shape = results[['Train Pct','K','Ground Truth w Depth 1','Success w Depth 1','Success w Depth 2']].groupby(['Train Pct', 'K','Ground Truth w Depth 1']).agg({'count', lambda gr: np.count_nonzero(gr)}).reset_index()
+agg_shape['Depth 1 Pct'] = agg_shape['Success w Depth 1','<lambda_0>'] / agg_shape['Success w Depth 1','count']
+
+lbls = sorted(results['Ground Truth w Depth 1'].unique())
+depths = [ agg_shape[(agg_shape['Train Pct',''] == pcts[0]) & (agg_shape['Ground Truth w Depth 1',''] == lbls[0])][['K']].reset_index() ]
+for i in range(1, len(lbls)):
+  depths.append(depths[0].copy())
+
+fig = plt.figure(figsize=(12, 5))
+gs = fig.add_gridspec(1, 3, hspace=0, wspace=0)
+(ax1, ax2, ax3) = gs.subplots(sharex=True, sharey=True)
+fig.suptitle('Success Rate Trends By Shape')
+axes = [ax1, ax2, ax3]
+ax1.set(xlabel='k', ylabel='% Correct')
+ax2.set(xlabel='k')
+ax3.set(xlabel='k')
+for i in range(len(lbls)):
+  lbl = lbls[i]
+  ax = axes[i]
+  ax.set_title(lbl)
+  depth = depths[i]
+  for pct in pcts:
+    filtered = agg_shape[(agg_shape['Train Pct',''] == pct) & (agg_shape['Ground Truth w Depth 1',''] == lbl)].reset_index()
+    col_lbl = f'Training Pct {pct}'
+    depth[col_lbl] = filtered['Depth 1 Pct','']
+    
+    ax.plot(depth['K'], depth[col_lbl], label=col_lbl)
+
+plt.legend()
+plt.savefig('success_shapes.png')
 plt.show()
 
 #endregion
